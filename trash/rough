@@ -1,327 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import networkx as nx
-import pandas as pd
-import heapq
-import ipywidgets as widgets
-from IPython.display import display, clear_output
-filename = 'toy_network2.txt'
-def read_graph_from_file(filename):
-    graph_df = pd.read_csv(filename, sep=" ", header=None, names=['Source', 'Target', 'Weight'])
-    return graph_df
-def build_graph_from_df(graph_df):
-    G = nx.Graph()
-    for _, row in graph_df.iterrows():
-        G.add_edge(row['Source'], row['Target'], weight=row['Weight'])
-    return G
-graph_df = read_graph_from_file(filename)
-G = build_graph_from_df(graph_df)
-charger_nodes = [2,4,9,17]
-quick_charger_nodes = [7,13]
-pos_seed = 112
-current_figure = None
-figure = plt.figure(figsize=(8,6),
-                    dpi = 500)
-node_colors = []
-font_colors = []
-for node in G.nodes():
-    if node in charger_nodes:
-        node_colors.append('purple')
-        font_colors.append('white')
-    elif node in quick_charger_nodes:
-        node_colors.append('blue')
-        font_colors.append('white')
-    else:
-        node_colors.append('cyan')
-        font_colors.append('black')
-
-pos = nx.spring_layout(G, seed=pos_seed)
-edge_labels = nx.get_edge_attributes(G, 'weight')
-nx.draw(G,
-        pos,
-        with_labels = False,
-        # font_weight = 'bold',
-        node_size = 50,
-        node_color = node_colors,
-        # font_size = 3,
-        # font_color = font_colors,
-        width = 0.5)
-
-for node, font_color in zip(G.nodes(), font_colors):
-    nx.draw_networkx_labels(G,
-                            pos, 
-                            labels={node: node}, 
-                            font_color=font_color, 
-                            font_size=3, 
-                            font_weight='bold')
-
-nx.draw_networkx_edge_labels(G,
-                             pos,
-                             edge_labels=edge_labels,
-                             font_color='red',
-                             font_size=2)
-
-plt.show()
-def dijkstra_mod(graph, start, charger_nodes, quick_charger_nodes, threshold, charging_penalty, quick_charging_penalty, refill_threshold):
-    node_attr = {
-        node: {
-            "penalty_dist": float('infinity'),
-            "non_charged_dist": float('infinity'),
-            "charged_dist": float('infinity'),
-            "previous_node": None
-        }
-        for node in graph
-    }
-
-    # Initialize start node distances
-    node_attr[start]["non_charged_dist"] = 0
-    node_attr[start]["charged_dist"] = 0
-    node_attr[start]["penalty_dist"] = 0
-
-    # Priority queue holds tuples of (penalty distance, non-charged distance, charged distance, node)
-    priority_queue = [(0, 0, 0, start)]  # (penalty_dist, non_charged_dist, charged_dist, node)
-    
-    while priority_queue:
-        # Pop the node with the smallest penalty distance
-        total_distance, total_dist_wo_penalty, current_distance, current_node = heapq.heappop(priority_queue)
-
-        # Skip processing if the popped node's penalty distance is greater than the already found best distance
-        if total_distance > node_attr[current_node]["penalty_dist"]:
-            continue
-
-        # Handle charging at charger nodes
-        if current_distance >= refill_threshold:
-            if current_node in charger_nodes:
-                total_distance = total_distance + charging_penalty
-                current_distance = 0  # Reset the charged distance
-            
-            if current_node in quick_charger_nodes:
-                total_distance = total_distance + quick_charging_penalty
-                current_distance = 0  # Reset the charged distance
-        
-        for neighbor in graph.neighbors(current_node):
-            weight = graph[current_node][neighbor]['weight']
-            charged_distance = current_distance + weight
-            non_charged_distance = total_dist_wo_penalty + weight
-            penalty_distance = total_distance + weight
-
-            # Skip the neighbor if the charged distance exceeds the threshold
-            if charged_distance > threshold:
-                continue
-
-            # Update neighbor distances if a better path is found
-            if penalty_distance < node_attr[neighbor]["penalty_dist"]:
-                node_attr[neighbor]["non_charged_dist"] = non_charged_distance
-                node_attr[neighbor]["penalty_dist"] = penalty_distance
-                node_attr[neighbor]["charged_dist"] = charged_distance
-                node_attr[neighbor]["previous_node"] = current_node
-                heapq.heappush(priority_queue, (penalty_distance, non_charged_distance, charged_distance, neighbor))
-    
-    return node_attr
-def reconstruct_path(node_attr, start, target):
-    path = []
-    current_node = target
-    while current_node is not None:
-        path.append(current_node)
-        current_node = node_attr[current_node]["previous_node"]
-    path.reverse()
-    return path if path[0] == start else None
-def visualize_graph(graph_df, node_attr, charger_nodes, quick_charger_nodes, start_node, target_node, threshold, path_edges):
-    G = nx.Graph()
-    # figure = plt.figure(figsize=(8, 6), dpi=500)
-    
-    global current_figure
-    if current_figure is not None:
-        plt.close(current_figure)  # Close the previous figure
-
-    current_figure = plt.figure(figsize=(8, 6), dpi=500)  # Create a new figure
-
-    plt.clf()
-    # Add edges to the graph
-    for _, row in graph_df.iterrows():
-        G.add_edge(row['Source'], row['Target'], weight=row['Weight'])
-
-    # Initialize node colors, sizes, and font color groups
-    node_colors = []
-    node_sizes = []
-    black_font_nodes = []
-    white_font_nodes = []
-    
-    for node in G.nodes():
-        if node == start_node:
-            node_colors.append('green')
-            node_sizes.append(100)
-            black_font_nodes.append(node)
-        elif node == target_node:
-            node_colors.append('yellow')
-            node_sizes.append(100)
-            black_font_nodes.append(node)
-        elif node in charger_nodes:
-            node_colors.append('purple')
-            node_sizes.append(180)
-            white_font_nodes.append(node)
-        elif node in quick_charger_nodes:
-            node_colors.append('blue')
-            node_sizes.append(200)
-            white_font_nodes.append(node)
-        else:
-            node_colors.append('cyan')
-            node_sizes.append(50)
-            black_font_nodes.append(node)
-
-    # Define edge labels
-    edge_labels = {(row['Source'], row['Target']): row['Weight'] for _, row in graph_df.iterrows()}
-
-    # Define node labels
-    node_labels = {node: f"{node}\n({node_attr[node]['non_charged_dist']})" for node in G.nodes()}
-    
-    # Set edge colors and widths based on path_edges
-    edge_colors = ['red' if (edge in path_edges) or (edge[::-1] in path_edges) else 'gray' for edge in G.edges()]
-    edge_widths = [2 if (edge in path_edges) or (edge[::-1] in path_edges) else 0.5 for edge in G.edges()]
-
-    # Get positions for the nodes
-    pos = nx.spring_layout(G, seed=pos_seed)
-
-    # Draw the graph with custom node sizes
-    nx.draw(G, 
-            pos, 
-            with_labels=False, 
-            node_color=node_colors, 
-            node_size=node_sizes, 
-            edge_color=edge_colors, 
-            width=edge_widths)
-
-    # Draw node labels with black font color
-    nx.draw_networkx_labels(G, pos, labels={node: node_labels[node] for node in black_font_nodes},
-                            font_color='black', font_size=3, font_weight='bold')
-
-    # Draw node labels with white font color
-    nx.draw_networkx_labels(G, pos, labels={node: node_labels[node] for node in white_font_nodes},
-                            font_color='white', font_size=3, font_weight='bold')
-
-    # Split the edge labels into two sets: one for path edges and another for non-path edges
-    path_edge_labels = {}
-    for edge in path_edges:
-        # Check if the edge or its reverse exists in edge_labels and add it to path_edge_labels
-        label = edge_labels.get(edge) or edge_labels.get(edge[::-1])
-        if label is not None:
-            path_edge_labels[edge] = label
-
-    non_path_edge_labels = {}
-    for edge in G.edges():
-        if edge not in path_edge_labels and edge[::-1] not in path_edge_labels:
-            non_path_edge_labels[edge] = edge_labels.get(edge) or edge_labels.get(edge[::-1])
-
-    # Draw edge labels for path edges with specified font size and color
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=path_edge_labels, font_color='darkblue', font_size=4, font_weight='bold')
-
-    # Draw edge labels for non-path edges with default font size and color
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=non_path_edge_labels, font_color='red', font_size=3)
-
-    # Set the title and display the plot
-    plt.title(f"Shortest Path to Node {target_node} Highlighted and Threshold {threshold}")
-    
-    shortest_dist = node_attr[target_node]["non_charged_dist"]
-    penalty_dist = node_attr[target_node]["penalty_dist"]
-    
-    plt.text(0.95, 0.95, 
-             f"Shortest distance covered: {shortest_dist}\n"
-             f"Distance that could've been covered instead of charging: {penalty_dist}",
-             transform=plt.gca().transAxes, 
-             fontsize=8, 
-             verticalalignment='top',
-             horizontalalignment='right',
-             bbox=dict(boxstyle='round,pad=0.5', fc='yellow', alpha=0.5))
-    
-    # Add legend
-    legend_elements = [
-        plt.Line2D([0], [0], marker='o', color='w', label='Normal', markerfacecolor='cyan', markersize=10),
-        plt.Line2D([0], [0], marker='o', color='w', label='Start', markerfacecolor='green', markersize=10),
-        plt.Line2D([0], [0], marker='o', color='w', label='Target', markerfacecolor='yellow', markersize=10),
-        plt.Line2D([0], [0], marker='o', color='w', label='Charger', markerfacecolor='purple', markersize=10),
-        plt.Line2D([0], [0], marker='o', color='w', label='Quick charger', markerfacecolor='blue', markersize=10),
-        plt.Line2D([0], [0], color='red', lw=2, label='Shortest path')
-    ]
-    legend = plt.legend(handles=legend_elements, loc='upper right', fontsize=8, bbox_to_anchor=(0.95, 0.85))
-    legend.get_frame().set_alpha(0.5)
-
-    plt.show()
-
-start_node = 0
-threshold = 120
-charging_penalty = 80
-quick_charging_penalty = 30
-refill_threshold_percent = 0.5
-refill_threshold = np.floor(threshold * refill_threshold_percent).astype(int)
-charger_nodes = [2,4,9,17]
-quick_charger_nodes = [7,13]
-
-node_attr = dijkstra_mod(G, start_node, charger_nodes, quick_charger_nodes, threshold, charging_penalty, quick_charging_penalty, refill_threshold)
-df = pd.DataFrame([
-        {
-            "Node": node,
-            "Post-penalty Dist": attr["penalty_dist"],
-            "Distance": attr["non_charged_dist"],
-            "Path": None
-        }
-        for node, attr in node_attr.items()
-    ])
-
-df.set_index('Node', inplace=True)
-df.sort_index(inplace=True)
-df["Path"] = None
-for node in G.nodes():
-    if node != start_node:
-        path = reconstruct_path(node_attr, start_node, node)
-        df.at[node, "Path"] = path
-df
-target_node = 11
-path = reconstruct_path(node_attr, start_node, target_node)
-print(path)
-if path:
-    # Highlight the shortest path on the graph
-    path_edges = list(zip(path, path[1:]))  # Create pairs of nodes for edges
-    visualize_graph(graph_df, node_attr, charger_nodes, quick_charger_nodes, start_node, target_node, threshold, path_edges)
-def interactive_visualization(graph_df, node_attr, charger_nodes, quick_charger_nodes, start_node, threshold):
-    possible_target_nodes = list(graph_df['Target'].unique()) + list(graph_df['Source'].unique())
-    possible_target_nodes = sorted(set(possible_target_nodes))
-
-    target_node_dropdown = widgets.Dropdown(
-        options=possible_target_nodes,
-        description='Target Node:',
-        value=1,
-        style={'description_width': 'initial'}
-    )
-    
-    output = widgets.Output()
-
-    def update_visualization(change):
-        target_node = change['new']
-        path = reconstruct_path(node_attr, start_node, target_node)
-        
-        with output:
-            clear_output(wait=True)
-            print(f"Path to {target_node}: {path}")
-            
-            if path:
-                path_edges = list(zip(path, path[1:]))
-                visualize_graph(graph_df, node_attr, charger_nodes, quick_charger_nodes, start_node, target_node, threshold, path_edges)
-    
-    target_node_dropdown.observe(update_visualization, names='value')
-    
-    display(target_node_dropdown, output)
-    
-    # Initial visualization
-    update_visualization({'new': target_node_dropdown.value})
-interactive_visualization(graph_df, node_attr, charger_nodes, quick_charger_nodes, start_node, threshold)
-
-
-Below is my code so far which is correct.
-Now I want to visualize the shortest path on the map.
-Write a function that visualizes it
-
-
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -336,7 +13,6 @@ import heapq
 import ipywidgets as widgets
 from IPython.display import display, clear_output
 from IPython.core.display import HTML
-
 datapath = "../new_data/"
 df = pd.read_csv(datapath+"Supercharge Locations.csv")
 df_CA = df[df["State"]=="CA"]
@@ -350,19 +26,14 @@ df_CA[['Latitude', 'Longitude']] = df_CA['GPS'].str.split(', ', expand=True)
 # Convert Latitude and Longitude to float if needed
 df_CA['Latitude'] = df_CA['Latitude'].astype(float)
 df_CA['Longitude'] = df_CA['Longitude'].astype(float)
-
-min_lon = -120.4346
-max_lon = -118.0784
-min_lat = 33.9867
-max_lat = 34.9530
-
+min_lon = -180
+max_lon = 180
+min_lat = -90
+max_lat = 90
 df_road_edge = pd.read_csv(datapath+"cal_road_net_edge.csv")
 df_road_node = pd.read_csv(datapath+"cal_road_network_node.csv")
 # Since the original dataset had Latitude and Longitude reversed we will swap them
 df_road_node['Latitude'], df_road_node['Longitude'] = df_road_node['Longitude'], df_road_node['Latitude']
-
-df_road_edge
-
 def limit_coordinates(df, min_lat, max_lat, min_long, max_long):
     # Limit latitude
     df = df[(df['Latitude'] >= min_lat) & (df['Latitude'] <= max_lat)]
@@ -379,7 +50,6 @@ df_edges = df_road_edge[df_road_edge["Node1"].isin(df_nodes.Node.to_list()) &
 df_charger = df_charger.drop(columns="index")
 df_nodes = df_nodes.drop(columns="index")
 df_edges = df_edges.drop(columns="index")
-
 reduced_map = folium.Map(location=[35, -119], zoom_start=6)
 for index, row in df_charger.iterrows():
     zip_code = row['Zip']
@@ -402,7 +72,6 @@ for index, row in df_charger.iterrows():
                   icon=folium.Icon(color=marker_color, icon='bolt', prefix='fa')).add_to(reduced_map)
     
 reduced_map
-
 G = nx.Graph()
 for index, row in df_nodes.iterrows():
     G.add_node(row['Node'],
@@ -411,7 +80,7 @@ for index, row in df_nodes.iterrows():
 for index, row in df_edges.iterrows():
     G.add_edge(row['Node1'], row['Node2'],
                weight = row['Distance'])
-    
+
 charger_points = gpd.GeoDataFrame(df_charger,
                                   geometry=gpd.points_from_xy(df_charger['Longitude'], df_charger['Latitude']))
 
@@ -439,7 +108,6 @@ for node in tqdm(G.nodes, desc="Processing nodes"):
     })
 
 node_to_charger_df = pd.DataFrame(node_to_charger)
-
 charger_to_nearest_node = {}
 for idx, charger in charger_points.iterrows():
     charger_coords = (charger['Latitude'], charger['Longitude'])
@@ -458,7 +126,7 @@ for idx, charger in charger_points.iterrows():
     charger_to_nearest_node[tuple(charger_coords)] = nearest_node
 
 charger_to_nearest_node = pd.DataFrame(list(charger_to_nearest_node.items()), columns=['Charger', 'Nearest_Node'])
-
+charger_to_nearest_node.head()
 gdf_nodes = gpd.GeoDataFrame(
     df_nodes,
     geometry=gpd.points_from_xy(df_nodes['Longitude'], df_nodes['Latitude'])
@@ -494,43 +162,45 @@ ax.legend()
 ax.set_title("Nodes and Charger Network")
 
 plt.show()
-
 df_charger = pd.concat([charger_points, charger_to_nearest_node], axis=1).drop(columns=["Charger"]).dropna()
 df_charger["Nearest_Node"] = np.floor(df_charger["Nearest_Node"]).astype(int)
+df_charger.head()
 
 charger_nodes = df_charger["Nearest_Node"].tolist()
+# Create a dictionary to hold the charger nodes segregated by charger type
+charger_nodes = {}  # Make sure this is a dictionary, not a list
 
-charger_nodes = {} 
-
-
+# Loop over each unique charger type and filter the nodes accordingly
 for charger_type in df_charger["kW"].unique():
+    # Get the list of nearest nodes for the current charger type
     nodes = df_charger[df_charger["kW"] == charger_type]["Nearest_Node"].tolist()
+    
+    # Assign the list of nodes to the dictionary with the charger type as the key
     charger_nodes[charger_type] = nodes
-
+    # Reversed dictionary to hold the node as the key and the charger type (kW) as the value
 charger_nodes_kW = {}
 
 # Loop through the original dictionary
 for charger_type, nodes in charger_nodes.items():
     for node in nodes:
         charger_nodes_kW[node] = charger_type
-
 class Car:
     range_L2_cap = {
-        "MS": {'range': 6.0, 'cap': 1.75},
-        "M3": {'range': 2.5, 'cap': 1},
-        "MX": {'range': 5.0, 'cap': 2},
-        "MY": {'range': 3.6, 'cap': 1.25}
+        "MS": {'range': 2.8, 'cap': 1.75},
+        "M3": {'range': 1.3, 'cap': 1},
+        "MX": {'range': 2.4, 'cap': 2},
+        "MY": {'range': 1.7, 'cap': 1.25}
     }
     
     def __init__(self, model):
+        range_calibrate = 1
         self.model = model
-        self.range_l2 = Car.range_L2_cap[model]['range']
+        self.range_l2 = Car.range_L2_cap[model]['range'] * range_calibrate
         self.charge_cap = Car.range_L2_cap[model]['cap']
         
     def calculate_penalty(self, charger_kW):
         penalty_l2 = (60 / charger_kW) * self.charge_cap
         return penalty_l2
-
 MS = Car("MS")
 M3 = Car("M3")
 MX = Car("MX")
@@ -594,9 +264,10 @@ def dijkstra_mod(graph, start, charger_nodes, refill_threshold, car):
     for node, attr in node_attr.items():
         if attr["charged_dist"] == attr["non_charged_dist"]:
             attr["penalty_dist"] = attr["charged_dist"]
+        elif attr["non_charged_dist"] <= threshold:
+            attr["penalty_dist"] = attr["non_charged_dist"]
 
     return node_attr
-
 def reconstruct_path(node_attr, start, target):
     path = []
     current_node = target
@@ -605,16 +276,15 @@ def reconstruct_path(node_attr, start, target):
         current_node = node_attr[current_node]["previous_node"]
     path.reverse()
     return path if path[0] == start else None
-
 sample_nodes = df_nodes['Node'].sample(n=2).reset_index(drop=True)
 start_node = sample_nodes[0]
 target_node = sample_nodes[1]
-car = MS
+print("Start Node: ", start_node)
+print("Target Node: ", target_node)
+car = M3
 refill_threshold_percent = 0.75
 refill_threshold = np.floor(car.range_l2 * refill_threshold_percent).astype(int)
-
 node_attr = dijkstra_mod(G, start_node, charger_nodes_kW, refill_threshold, car)
-
 df = pd.DataFrame([
         {
             "Node": node,
@@ -627,17 +297,40 @@ df = pd.DataFrame([
 
 df.set_index('Node', inplace=True)
 df.sort_index(inplace=True)
-
 df["Path"] = None
 for node in G.nodes():
     if node != start_node:
         path = reconstruct_path(node_attr, start_node, node)
         df.at[node, "Path"] = path
-
+df.head()
 df["Penalty"] = df["Post-penalty Dist"]-df["Distance"]
-
+print("Target node: ", target_node)
 target_node_path = df.loc[target_node]["Path"]
-gdf_shortest_path = gpd.GeoDataFrame(geometry=[LineString(target_node_path)])
+if target_node_path == None:
+    print("No path exists from ", start_node," to ", target_node, " for Model: ", car.model)
+target_node_path = df.loc[target_node]["Path"]
+if target_node_path == None:
+    target_node_path_coords = []
+else:
+    target_node_path_coords = [gdf_nodes.loc[gdf_nodes["Node"] == node].geometry.values[0] for node in target_node_path]
+gdf_shortest_path = gpd.GeoDataFrame(geometry=[LineString(target_node_path_coords)])
+penalty = df.loc[target_node]["Penalty"]
+shortest_path_distance = df.loc[target_node]["Distance"]
+
+if target_node_path != None:
+    print("Shortest path distance: ", np.round(shortest_path_distance,4))
+    print("Charging Penalty: ", np.round(penalty,4))
+else:
+    print("No path")
+
+print("Start Node: ", start_node)
+print("Target Node: ", target_node)
+print("Car Model: ",car.model)
+if shortest_path_distance < float('inf'):
+    print("Shortest path distance: ", np.round(shortest_path_distance,4))
+    print("Charging Penalty: ", np.round(penalty,4))
+else:
+    print("No path available")
 
 gdf_nodes = gpd.GeoDataFrame(
     df_nodes,
@@ -654,25 +347,321 @@ gdf_edges = gpd.GeoDataFrame(geometry=edge_list)
 
 fig, ax = plt.subplots(figsize=(10,10))
 gdf_edges.plot(ax=ax,
-               linewidth=1,
+               linewidth=0.5,
                color='gray')
 
 gdf_nodes.plot(ax=ax,
                color='blue',
                marker='o',
                label='Nodes',
-               markersize=5)
+               markersize=0.1)
 
-gdf_shortest_path.plot(ax=ax, linewidth=5, color='red', label='Shortest Path')
+gdf_shortest_path.plot(ax=ax, linewidth=3, color='red', label='Shortest Path')
 
 charger_points.plot(ax=ax,
                     color='red',
                     marker='^',
                     label='Charger',
-                    markersize=10)
+                    markersize=3)
+
+
+gdf_nodes[gdf_nodes['Node'] == start_node].plot(ax=ax, color='orange', marker='s', label='Origin', markersize=30)
+gdf_nodes[gdf_nodes['Node'] == target_node].plot(ax=ax, color='black', marker='s', label='Destination', markersize=30)
 
 ax.grid(True)
 ax.legend()
 ax.set_title("Nodes and Charger Network")
 
+# Adding text box in the top right corner with the required details
+info_text = (f"Start Node: {start_node}\n"
+             f"Target Node: {target_node}\n"
+             f"Car Model: {car.model}\n")
+
+if shortest_path_distance < float('inf'):
+    info_text += (f"Shortest Path Distance: {np.round(shortest_path_distance, 4)}\n"
+                  f"Charging Penalty: {np.round(penalty, 4)}")
+else:
+    info_text += "No Path Available"
+
+# Use ax.text to place the information in the top right corner
+ax.text(1.05, 1, info_text, transform=ax.transAxes,
+        fontsize=10, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.5))
+
+# Adjust the plot to make space for the text box
+plt.subplots_adjust(right=0.95)
+
 plt.show()
+
+# Create GeoDataFrame for nodes
+gdf_nodes = gpd.GeoDataFrame(
+    df_nodes,
+    geometry=gpd.points_from_xy(df_nodes['Longitude'], df_nodes['Latitude'])
+)
+
+# Create edges
+edge_list = []
+for _, edge in df_edges.iterrows():
+    node1_coords = gdf_nodes.loc[gdf_nodes['Node'] == edge['Node1']].geometry.values[0]
+    node2_coords = gdf_nodes.loc[gdf_nodes['Node'] == edge['Node2']].geometry.values[0]
+    edge_list.append(LineString([node1_coords, node2_coords]))
+
+gdf_edges = gpd.GeoDataFrame(geometry=edge_list)
+
+# Get origin location coordinates
+origin = gdf_nodes.loc[gdf_nodes['Node'] == start_node].iloc[0]
+
+# Create Folium map
+map_center = [origin.geometry.y, origin.geometry.x]  # Center map closer to origin
+m = folium.Map(location=map_center, zoom_start=10)  # Zoom in more
+
+# Add edges
+folium.GeoJson(
+    gdf_edges.__geo_interface__,
+    style_function=lambda x: {'color': 'gray', 'weight': 1}
+).add_to(m)
+
+# Add nodes
+for _, node in gdf_nodes.iterrows():
+    folium.CircleMarker(
+        [node.geometry.y, node.geometry.x],
+        radius=0.01,
+        color='blue',
+        fill=True,
+        fillColor='blue',
+        fillOpacity=0.2
+    ).add_to(m)
+
+# Add shortest path
+folium.GeoJson(
+    gdf_shortest_path.__geo_interface__,
+    style_function=lambda x: {'color': 'red', 'weight': 10}
+).add_to(m)
+
+# Add charger points with color based on kW
+for _, charger in df_charger.iterrows():
+    coordinates = charger['GPS'].split(', ')
+    lat, lon = float(coordinates[0]), float(coordinates[1])
+    kw = charger['kW']
+    zip_code = charger['Zip']
+    stalls = charger['Stalls']
+    
+    if kw == 250:
+        marker_color = 'red'
+    elif kw == 150:
+        marker_color = 'blue'
+    elif kw in [120, 122, 125, 120]:
+        marker_color = 'gray'
+    elif kw == 72:
+        marker_color = 'beige'
+    else:
+        marker_color = 'green'
+    
+    folium.Marker(
+        [lat, lon],
+        popup=f"Zip: {zip_code},\nStalls: {stalls},\n{np.floor(kw).astype(int)} kW\n({lat}, {lon})",
+        icon=folium.Icon(color=marker_color, icon='bolt', prefix='fa')
+    ).add_to(m)
+
+
+# Add origin and destination
+folium.Marker(
+    [origin.geometry.y, origin.geometry.x],
+    icon=folium.Icon(color='orange', icon='play', prefix='fa'),
+    popup='Origin'
+).add_to(m)
+
+destination = gdf_nodes.loc[gdf_nodes['Node'] == target_node].iloc[0]
+
+folium.Marker(
+    [destination.geometry.y, destination.geometry.x],
+    icon=folium.Icon(color='black', icon='flag-checkered', prefix='fa'),
+    popup='Destination'
+).add_to(m)
+
+# Prepare the text content for the box
+info_box_html = f'''
+<div style="
+    position: fixed;
+    top: 10px; right: 10px; 
+    width: 250px;
+    height: auto;
+    padding: 10px;
+    background-color: white;
+    border: 2px solid gray;
+    z-index: 1000;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+">
+    <b>Start Node:</b> {start_node}<br>
+    <b>Target Node:</b> {target_node}<br>
+    <b>Car Model:</b> {car.model}<br>
+'''
+
+if shortest_path_distance < float('inf'):
+    info_box_html += f'''
+    <b>Path Distance:</b> {np.round(shortest_path_distance, 4)}<br>
+    <b>Charging Penalty:</b> {np.round(penalty, 4)}
+    '''
+else:
+    info_box_html += f'''
+    <b style="color: red;">No path available</b>
+    '''
+
+info_box_html += '</div>'
+
+# Add the information box to the map
+m.get_root().html.add_child(folium.Element(info_box_html))
+
+
+# Add layer control and title
+folium.LayerControl().add_to(m)
+title_html = '''
+             <h3 align="center" style="font-size:16px"><b>Shortest path for charge-constrained EV</b></h3>
+             '''
+m.get_root().html.add_child(folium.Element(title_html))
+
+# Display the map
+m
+# Interactive widgets
+start_node_dropdown = widgets.Dropdown(
+    options=df_nodes['Node'].tolist(),
+    description='Start Node:'
+)
+target_node_dropdown = widgets.Dropdown(
+    options=sorted(df_nodes['Node'].tolist(), reverse=True),
+    description='Target Node:'
+)
+car_model_radio = widgets.RadioButtons(
+    options=['MS', 'M3', 'MX', 'MY'],
+    description='Car Model:'
+)
+update_button = widgets.Button(description="Update Map")
+
+def update_maps(b):
+    start_node = start_node_dropdown.value
+    target_node = target_node_dropdown.value
+    car_model = car_model_radio.value
+    car = Car(car_model)
+    refill_threshold_percent = 0.75
+    refill_threshold = np.floor(car.range_l2 * refill_threshold_percent).astype(int)
+    
+    # Run Dijkstra's algorithm
+    node_attr = dijkstra_mod(G, start_node, charger_nodes_kW, refill_threshold, car)
+    path = reconstruct_path(node_attr, start_node, target_node)
+    shortest_path_distance = np.round(node_attr[target_node]["non_charged_dist"],4)
+    penalty = np.round(node_attr[target_node]["penalty_dist"] - node_attr[target_node]["non_charged_dist"],4)
+    
+    print("Start Node: ", start_node)
+    print("Target Node: ", target_node)
+    print("Car Model: ", car_model)
+    if shortest_path_distance < float('inf'):
+        print("Shortest path distance: ", np.round(shortest_path_distance,4))
+        print("Charging Penalty: ", penalty)
+    else:
+        print("No path available")
+
+    # Clear output and update the map only
+    clear_output(wait=True)
+    
+    # Geopandas plot
+    fig, ax = plt.subplots(figsize=(10, 10))
+    gdf_edges.plot(ax=ax, linewidth=0.5, color='gray')
+    gdf_nodes.plot(ax=ax, color='blue', marker='o', label='Nodes', markersize=0.1)
+    charger_points.plot(ax=ax, color='red', marker='^', label='Charger', markersize=3)
+    
+    # Plot the shortest path
+    path_coords = [G.nodes[node]['pos'] for node in path]
+    path_line = LineString(path_coords)
+    gpd.GeoSeries([path_line]).plot(ax=ax, color='green', linewidth=2, label='Shortest Path')
+    gdf_nodes[gdf_nodes['Node'] == start_node].plot(ax=ax, color='orange', marker='s', label='Origin', markersize=30)
+    gdf_nodes[gdf_nodes['Node'] == target_node].plot(ax=ax, color='black', marker='s', label='Destination', markersize=30)
+
+    ax.grid(True)
+    ax.legend()
+    ax.set_title(f"Shortest Path of Distance: {shortest_path_distance} from Node {start_node} to Node {target_node} for model {car_model} with Charging penalty :{penalty}")
+    plt.show()
+    
+    # Folium map
+    origin = gdf_nodes.loc[gdf_nodes['Node'] == start_node].iloc[0]
+    map_center = [origin.geometry.y, origin.geometry.x]
+    m = folium.Map(location=map_center, zoom_start=10)
+
+    folium.GeoJson(
+        gdf_edges.__geo_interface__,
+        style_function=lambda x: {'color': 'gray', 'weight': 1}
+    ).add_to(m)
+
+    for _, node in gdf_nodes.iterrows():
+        folium.CircleMarker(
+            [node.geometry.y, node.geometry.x],
+            radius=0.01,
+            color='blue',
+            fill=True,
+            fillColor='blue',
+            fillOpacity=0.2
+        ).add_to(m)
+    
+    # Add the path to the Folium map
+    folium.GeoJson(
+        gdf_shortest_path.__geo_interface__,
+        style_function=lambda x: {'color': 'red', 'weight': 10, 'opacity': 0.5}  # Adjusting opacity to 50%
+    ).add_to(m)
+    path_coords = [(G.nodes[node]['pos'][1], G.nodes[node]['pos'][0]) for node in path]
+    folium.PolyLine(
+        locations=path_coords,
+        color='red',
+        weight=10,
+        opacity=0.5  # Adjusting opacity to 50%
+    ).add_to(m)
+
+    for _, charger in df_charger.iterrows():
+        coordinates = charger['GPS'].split(', ')
+        lat, lon = float(coordinates[0]), float(coordinates[1])
+        kw = charger['kW']
+        zip_code = charger['Zip']
+        stalls = charger['Stalls']
+        
+        if kw == 250:
+            marker_color = 'red'
+        elif kw == 150:
+            marker_color = 'blue'
+        elif kw in [120, 122, 125, 120]:
+            marker_color = 'gray'
+        elif kw == 72:
+            marker_color = 'beige'
+        else:
+            marker_color = 'green'
+        
+        folium.Marker(
+            [lat, lon],
+            popup=f"Zip: {zip_code},\nStalls: {stalls},\n{np.floor(kw).astype(int)} kW\n({lat}, {lon})",
+            icon=folium.Icon(color=marker_color, icon='bolt', prefix='fa')
+        ).add_to(m)
+
+    folium.Marker(
+        [origin.geometry.y, origin.geometry.x],
+        icon=folium.Icon(color='orange', icon='play', prefix='fa'),
+        popup='Origin'
+    ).add_to(m)
+
+    destination = gdf_nodes.loc[gdf_nodes['Node'] == target_node].iloc[0]
+
+    folium.Marker(
+        [destination.geometry.y, destination.geometry.x],
+        icon=folium.Icon(color='black', icon='flag-checkered', prefix='fa'),
+        popup='Destination'
+    ).add_to(m)
+    
+    folium.LayerControl().add_to(m)
+
+    # Display the updated map
+    display(m)
+    
+    # Re-display widgets
+    display(start_node_dropdown, target_node_dropdown, car_model_radio, update_button)
+
+# Attach the update function to the button
+update_button.on_click(update_maps)
+
+# Display the widgets
+display(start_node_dropdown, target_node_dropdown, car_model_radio, update_button)
