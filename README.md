@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.7%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Navigate the future of travel with our EV Route Optimizer! This project revolutionizes route planning for electric vehicles by finding the optimal path while considering charging constraints.
+Electric vehicles are often subject to range issues. Unlike gasoline vehicles, EVs need to be charged for longer periods of time. This is especially cumbersome when one is going on a roadtrip that spans lengthy distances. If not well-planned, one might end up stranded with no charge in their EV batteries. <br>Hence we have taken on the problem of solving shortest path with charge constraint, where one needs to decide the specific route to take to reach their destination, by halting at charging points in the most optimized manner.
 
 ## 🌟 Features
 
@@ -38,7 +38,7 @@ Here I used a hypothetical toy network to test out the algorithm
 #### Final
 The algorithm is executed on California map
 #### New Data
-1. The supercharger data is obtained from https://www.kaggle.com/datasets/omarsobhy14/supercharge-locations
+1. The supercharger data (slightly dated) is obtained from https://www.kaggle.com/datasets/omarsobhy14/supercharge-locations
 2. The road networks are obtained from https://users.cs.utah.edu/~lifeifei/SpatialDataset.htm
 
 ## 🛠️ Tech Stack
@@ -52,11 +52,15 @@ The algorithm is executed on California map
 
 ## 📸 Screenshots
 
+#### Geopanda visualization
 ![Route Visualization Geopanda](imgs/geopanda_viz.png)
+#### Folium Visualization
 ![Route Visualization Folium](imgs/folium_viz.png)
 *Optimal route with charging stations*
 
+#### California Road network
 ![Interactive UI California](gif/california_interactive.gif)
+#### Toy network
 ![Interactive UI Toy Network](gif/toy_interactive.gif)
 *User-friendly interface for route planning*
 
